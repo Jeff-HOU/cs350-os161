@@ -1,0 +1,6 @@
+*/*/*/.depend
+*/*/*/build
+build
+cscope.out
+tags
+kern/compile/ASST*
