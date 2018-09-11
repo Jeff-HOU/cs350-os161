@@ -355,10 +355,15 @@ cmd_unmount(int nargs, char **args)
 	return vfs_unmount(device);
 }
 
-static int cmd_dth(int args, char **args){
-#ifndef UW
-#define UW
-#endif
+static
+int
+cmd_dth(int nargs, char **args)
+{
+    (void)nargs;
+    (void)args;
+    
+    dbflags = DB_THREADS;
+    return 0;
 }
 
 /*
