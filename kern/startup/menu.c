@@ -505,6 +505,7 @@ static const char *mainmenu[] = {
 #endif /* UW */
 #endif
 	"[kh] Kernel heap stats              ",
+        "[dth] Enable debugging              ",
 	"[q] Quit and shut down              ",
 	NULL
 };
@@ -549,6 +550,7 @@ static struct {
 	{ "q",		cmd_quit },
 	{ "exit",	cmd_quit },
 	{ "halt",	cmd_quit },
+        { "dth",        cmd_dth },
 
 #if OPT_SYNCHPROBS
 	/* in-kernel synchronization problem(s) */
