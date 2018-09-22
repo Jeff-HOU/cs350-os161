@@ -183,8 +183,16 @@ void
 lock_acquire(struct lock *lock)
 {
         // Write this
-
-        (void)lock;  // suppress warning until code gets written
+        spinlock_acquire(&lock -> sl);
+        while (lock -> holder != NULL) {
+                wchan_lock(lock -> wc);
+                spinlock_release(&lock -> sl);
+                wchan_sleep(lock -> wc);
+                spinlock_acquire(&lock -> sl);
+        }
+        lock -> holder = curthread;
+        spinlock_release(&lock -> sl);
+        // (void)lock;  // suppress warning until code gets written
 }
 
 void
