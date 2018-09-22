@@ -199,8 +199,13 @@ void
 lock_release(struct lock *lock)
 {
         // Write this
+        spinlock_acquire(&lock -> sl);
+        KASSERT(lock -> holder == curthread);
+        lock -> holder = NULL;
+        wchan_wakeone(lock -> wc);
+        spinlock_release(&lock -> sl);
 
-        (void)lock;  // suppress warning until code gets written
+//        (void)lock;  // suppress warning until code gets written
 }
 
 bool
