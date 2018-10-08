@@ -202,7 +202,7 @@ void
 lock_release(struct lock *lock)
 {
         // Write this
-        KASSERT(lock_do_i_hold(lock))
+        KASSERT(lock_do_i_hold(lock));
         spinlock_acquire(&lock -> sl);
         KASSERT(lock -> holder == curthread);
         lock -> holder = NULL;
