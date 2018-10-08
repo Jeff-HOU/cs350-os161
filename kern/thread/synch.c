@@ -165,11 +165,6 @@ lock_create(const char *name)
         
         // add stuff here as needed
         lock -> wc = wchan_create(lock -> lk_name);
-        if (lock -> wc == NULL) {
-                kfree(lock -> lk_name);
-                kfree(lock);
-                return NULL;
-        } // why???
         lock -> holder = NULL;
         spinlock_init(&lock -> sl);
         return lock;
@@ -207,6 +202,7 @@ void
 lock_release(struct lock *lock)
 {
         // Write this
+        KASSERT(lock_do_i_hold(lock))
         spinlock_acquire(&lock -> sl);
         KASSERT(lock -> holder == curthread);
         lock -> holder = NULL;
