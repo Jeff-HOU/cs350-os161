@@ -3,7 +3,7 @@
 #include <synchprobs.h>
 #include <synch.h>
 #include <opt-A1.h>
-
+#include <array.h>
 /* 
  * This simple default synchronization mechanism allows only vehicle at a time
  * into the intersection.   The intersectionSem is used as a a lock.
@@ -18,11 +18,45 @@
  * declare other global variables if your solution requires them.
  */
 
+typedef struct Vehicles
+{
+    Direction origin;
+    Direction destination;
+} Vehicle;
+static struct lock* globalLock;
+static struct cv* globalCV;
+struct array* vehicles;
+static bool right_turn(Vehicle *v);
+static bool conflict(Vehicle *a, Vehicle *b);
+
+bool right_turn(Vehicle *v) {
+    KASSERT(v != NULL);
+    if (((v->origin == west) && (v->destination == south)) ||
+        ((v->origin == south) && (v->destination == east)) ||
+        ((v->origin == east) && (v->destination == north)) ||
+        ((v->origin == north) && (v->destination == west))) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+bool conflict(Vehicle *a, Vehicle *b){
+    if(a -> origin == b -> origin){
+        return false;
+    }else if((a -> origin == b -> destination) && (a -> destination == b -> origin)){
+        return false;
+    }else if((a -> destination != b -> destination) && (right_turn(a) || right_turn(b))){
+        return false;
+    }else{
+        return true;
+    }
+}
+
 /*
  * replace this with declarations of any synchronization and other variables you need here
  */
-static struct semaphore *intersectionSem;
-
+//static struct semaphore *intersectionSem;
 
 /* 
  * The simulation driver will call this function once before starting
@@ -36,9 +70,13 @@ intersection_sync_init(void)
 {
   /* replace this default implementation with your own implementation */
 
-  intersectionSem = sem_create("intersectionSem",1);
-  if (intersectionSem == NULL) {
-    panic("could not create intersection semaphore");
+//  intersectionSem = sem_create("intersectionSem",1);
+    globalLock = lock_create("globalLock");
+    globalCV = cv_create("globalCV");
+    vehicles = array_create();
+
+  if (globalLock == NULL || globalCV == NULL || vehicles == NULL) {
+    panic("could not create intersection semaphore, traffic_synch.c intersection_sync_init");
   }
   return;
 }
@@ -54,8 +92,9 @@ void
 intersection_sync_cleanup(void)
 {
   /* replace this default implementation with your own implementation */
-  KASSERT(intersectionSem != NULL);
-  sem_destroy(intersectionSem);
+    KASSERT(globalLock != NULL); lock_destroy(globalLock);
+    KASSERT(globalCV != NULL);   cv_destroy(globalCV);
+    KASSERT(vehicles != NULL);   array_destroy(vehicles);
 }
 
 
@@ -76,10 +115,30 @@ void
 intersection_before_entry(Direction origin, Direction destination) 
 {
   /* replace this default implementation with your own implementation */
-  (void)origin;  /* avoid compiler complaint about unused parameter */
-  (void)destination; /* avoid compiler complaint about unused parameter */
-  KASSERT(intersectionSem != NULL);
-  P(intersectionSem);
+//  (void)origin;  /* avoid compiler complaint about unused parameter */
+//  (void)destination; /* avoid compiler complaint about unused parameter */
+//  KASSERT(intersectionSem != NULL);
+//  P(intersectionSem);
+    KASSERT(globalLock != NULL);
+    KASSERT(globalCV != NULL);
+    KASSERT(vehicles != NULL);
+    lock_acquire(globalLock);
+    Vehicle *v = kmalloc(sizeof(Vehicle));
+    v -> origin = origin;
+    v -> destination = destination;
+    bool wait = true;
+    while (wait) {
+        for (unsigned i = 0; i < array_num(vehicles); ++i) {
+            if (conflict(v, array_get(vehicles, i))) {
+                cv_wait(globalCV, globalLock);
+                break;
+            }
+            wait = false;
+            break;
+        }
+    }
+    array_add(vehicles, v, NULL);
+    lock_release(globalLock);
 }
 
 
@@ -98,8 +157,21 @@ void
 intersection_after_exit(Direction origin, Direction destination) 
 {
   /* replace this default implementation with your own implementation */
-  (void)origin;  /* avoid compiler complaint about unused parameter */
-  (void)destination; /* avoid compiler complaint about unused parameter */
-  KASSERT(intersectionSem != NULL);
-  V(intersectionSem);
+//  (void)origin;  /* avoid compiler complaint about unused parameter */
+//  (void)destination; /* avoid compiler complaint about unused parameter */
+//  KASSERT(intersectionSem != NULL);
+//  V(intersectionSem);
+    KASSERT(globalLock != NULL);
+    KASSERT(globalCV != NULL);
+    KASSERT(vehicles != NULL);
+    lock_acquire(globalLock);
+    for (unsigned i = 0; i < array_num(vehicles); ++i) {
+        Vehicle *v = array_get(vehicles, i);
+        if ((v -> origin == origin) && (v -> destination == destination)) {
+            array_remove(vehicles, i);
+            cv_broadcast(globalCV, globalLock);
+            break;
+        }
+    }
+    lock_release(globalLock);
 }
