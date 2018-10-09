@@ -71,13 +71,14 @@ intersection_sync_init(void)
   /* replace this default implementation with your own implementation */
 
 //  intersectionSem = sem_create("intersectionSem",1);
+    kprintf("intersection_sync_init starts");
     globalLock = lock_create("globalLock");
     globalCV = cv_create("globalCV");
     vehicles = array_create();
-
-  if (globalLock == NULL || globalCV == NULL || vehicles == NULL) {
-    panic("could not create intersection semaphore, traffic_synch.c intersection_sync_init");
-  }
+    if (globalLock == NULL || globalCV == NULL || vehicles == NULL) {
+        panic("could not create intersection semaphore, traffic_synch.c intersection_sync_init");
+    }
+    kprintf("intersection_sync_init finishes");
   return;
 }
 
@@ -127,9 +128,11 @@ intersection_before_entry(Direction origin, Direction destination)
     v -> origin = origin;
     v -> destination = destination;
     bool wait = true;
+    kprintf("intersection_before_entry 1");
     while (wait) {
+        kprintf("intersection_before_entry 2");
         for (unsigned i = 0; i < array_num(vehicles); ++i) {
-            if (conflict(v, array_get(vehicles, i))) {
+            if ((array_num(vehicles) != 0) && (conflict(v, array_get(vehicles, i)))) {
                 cv_wait(globalCV, globalLock);
                 break;
             }
@@ -137,6 +140,7 @@ intersection_before_entry(Direction origin, Direction destination)
             break;
         }
     }
+    kprintf("intersection_before_entry 3");
     array_add(vehicles, v, NULL);
     lock_release(globalLock);
 }
@@ -161,10 +165,12 @@ intersection_after_exit(Direction origin, Direction destination)
 //  (void)destination; /* avoid compiler complaint about unused parameter */
 //  KASSERT(intersectionSem != NULL);
 //  V(intersectionSem);
+    kprintf("intersection_after_exit 0");
     KASSERT(globalLock != NULL);
     KASSERT(globalCV != NULL);
     KASSERT(vehicles != NULL);
     lock_acquire(globalLock);
+    kprintf("intersection_after_exit 1");
     for (unsigned i = 0; i < array_num(vehicles); ++i) {
         Vehicle *v = array_get(vehicles, i);
         if ((v -> origin == origin) && (v -> destination == destination)) {
@@ -173,5 +179,6 @@ intersection_after_exit(Direction origin, Direction destination)
             break;
         }
     }
+    kprintf("intersection_after_exit 2");
     lock_release(globalLock);
 }
