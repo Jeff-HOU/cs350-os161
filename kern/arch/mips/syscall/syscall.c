@@ -36,7 +36,6 @@
 #include <current.h>
 #include <syscall.h>
 
-
 /*
  * System call dispatcher.
  *
@@ -129,11 +128,9 @@ syscall(struct trapframe *tf)
 			    (int)tf->tf_a2,
 			    (pid_t *)&retval);
 	  break;
-#if OPT_A2
     case SYS_fork:
       err = sys_fork((pid_t *)&retval, tf);
       break;
-#endif
 #endif // UW
 
 	    /* Add stuff here */
@@ -181,21 +178,21 @@ syscall(struct trapframe *tf)
  *
  * Thus, you can trash it and do things another way if you prefer.
  */
-#if OPT_A2
-void
-enter_forked_process(void *tf, unsigned long data2)
-{
-    KASSERT(tf != NULL);
-	(void)data2;
-    tf -> tf_v0 = 0;
-    tf -> tf_a3 = 0;
-    tf -> epc += 4;
-    mips_usermode(tf);
+void enter_forked_process_wrapper(void* tf, unsigned long data2){
+    (void)data2;
+    enter_forked_process(tf);
 }
-#else
+
 void
 enter_forked_process(struct trapframe *tf)
 {
-	(void)tf;
+    KASSERT(tf != NULL);
+    struct trapframe* tmp_tf = tf;
+    struct trapframe new_tf = *tmp_tf;
+    new_tf.tf_v0 = 0;
+    new_tf.tf_a3 = 0;
+    new_tf.tf_epc += 4;
+    kfree(tmp_tf);
+    mips_usermode(&new_tf);
 }
-#endif
+

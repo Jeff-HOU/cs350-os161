@@ -11,6 +11,7 @@
 #include <copyinout.h>
 #include <array.h>
 #include <synch.h>
+#include <mips/trapframe.h>
 
   /* this implementation of sys__exit does not do anything with the exit code */
   /* this needs to be fixed to get exit() and waitpid() working properly */
@@ -44,7 +45,7 @@ void sys__exit(int exitcode) {
     array_add(pid_pool, &currpid, NULL);
     lock_release(pid_pool_lock);
   }
-  for (unsigned i = 0; i < array_num(proc_tables), ++i){
+  for (unsigned i = 0; i < array_num(proc_tables); ++i){
     struct proc_table* pt = array_get(proc_tables, i);
     if ((pt -> ppid == currpid) && (pt -> state == PROC_ZOMBIE)){
       pt -> state = PROC_EXITED;
@@ -130,7 +131,7 @@ sys_waitpid(pid_t pid,
   /* for now, just pretend the exitstatus is 0 */
 #if OPT_A2
   lock_acquire(proc_table_lock);
-  struct proc_table* pt = find_proc_table(currpid);
+  struct proc_table* pt = find_proc_table(curproc -> pid);
   KASSERT(pt != NULL);
   if (pt -> ppid == -1) {
     return (-1); // What error should this be?
@@ -140,7 +141,7 @@ sys_waitpid(pid_t pid,
     lock_release(proc_table_lock);
     return (ESRCH);
   }
-  if (wait_pt -> ppid != currpid){
+  if (wait_pt -> ppid != curproc -> pid){
     lock_release(proc_table_lock);
     return (ECHILD);
   }
@@ -167,11 +168,11 @@ int sys_fork(pid_t* retval, struct trapframe *tf){
         proc_destroy(child_proc);
         return ENPROC;
     }
-    if (as_copy(curproc_getas(), &(newProc->p_addrspace)) != 0) {
+    if (as_copy(curproc_getas(), &(child_proc -> p_addrspace)) != 0) {
         proc_destroy(child_proc);
         return ENOMEM;
     }
-    struct trapframe * child_tf = kmalloc(sizeof(struct trapframe));
+    struct trapframe* child_tf = kmalloc(sizeof(struct trapframe));
     if (!child_tf) {
         proc_destroy(child_proc);
         // https://www.linuxjournal.com/article/6930
@@ -179,12 +180,13 @@ int sys_fork(pid_t* retval, struct trapframe *tf){
     }
     // https://stackoverflow.com/questions/13284033/copying-structure-in-c-with-assignment-instead-of-memcpy#comment18110975_13284033
     memcpy(child_tf, tf, sizeof *child_tf);
-    int thread_fork_return = thread_fork(curthread -> t_name, child_proc, &enter_forked_process, child_tf, 2333)
-    if (!thread_fork_return) {
-        kfree(tf);
+    int thread_fork_return = thread_fork(curthread -> t_name, child_proc, &enter_forked_process_wrapper, (void*)child_tf, 2333);
+    if (thread_fork_return) {
+        kfree(child_tf);
         proc_destroy(child_proc);
         return thread_fork_return;
     }
+    (void)thread_fork_return;
     *retval = child_proc -> pid;
     return 0;
 }

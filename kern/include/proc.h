@@ -107,15 +107,15 @@ struct addrspace *curproc_getas(void);
 struct addrspace *curproc_setas(struct addrspace *);
 
 #if OPT_A2
-pid_t HIGHEST_PID = 2;
-pid_t MAX_PID = 32768;
+extern pid_t A2_HIGHEST_PID;
+extern pid_t A2_MAX_PID;
 struct array* pid_pool;
 struct lock* pid_pool_lock;
 struct lock* proc_table_lock;
 enum proc_state {PROC_RUNNING, PROC_EXITED, PROC_ZOMBIE};
 struct proc_table {
 	pid_t pid;
-	pit_t ppid; // ppid for parent pid, -1 for global parent process
+	pid_t ppid; // ppid for parent pid, -1 for global parent process
 	enum proc_state state;
 	int exitcode;
 };
