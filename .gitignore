@@ -4,3 +4,4 @@ build
 cscope.out
 tags
 kern/compile/ASST*
+.vscode

@@ -69,7 +69,8 @@ static struct semaphore *proc_count_mutex;
 struct semaphore *no_proc_sem;   
 #endif  // UW
 
-
+// pid_pool = array_create();
+// proc_tables = array_create();
 
 /*
  * Create a proc structure.
@@ -226,7 +227,30 @@ proc_create_runprogram(const char *name)
 	if (proc == NULL) {
 		return NULL;
 	}
-
+#if OPT_A2
+	KASSERT(pid_pool != NULL);
+	lock_acquire(pid_pool_lock);
+	if (array_num(pid_pool) != 0) {
+		pid_t curr_pid = array_get(pid_pool, 0);
+		KASSERT(curr_pid != NULL);
+		proc -> pid = curr_pid;
+		array_remove(pid_pool, 0);
+	} else {
+		if (HIGHEST_PID == MAX_PID) {
+			return NULL;
+		}
+		proc -> pid = HIGHEST_PID++;
+	}
+	lock_release(pid_pool_lock);
+	struct proc_table* pt = kmalloc(sizeof(struct proc_table));
+	pt -> pid = proc -> pid;
+	pt -> ppid = -1;
+	pt -> state = PROC_RUNNING;
+	pt -> exitcode = 0;
+	lock_acquire(proc_table_lock);
+	array_add(proc_tables, pt, NULL);
+	lock_release(proc_table_lock);
+#endif
 #ifdef UW
 	/* open the console - this should always succeed */
 	console_path = kstrdup("con:");
@@ -364,3 +388,15 @@ curproc_setas(struct addrspace *newas)
 	spinlock_release(&proc->p_lock);
 	return oldas;
 }
+
+#if OPT_A2
+struct proc_table* find_proc_table(pid_t pid) {
+	for (unsigned i = 0; i < array_num(proc_tables); ++i) {
+		if (array_get(proc_tables, i) -> pid == pid) {
+			return array_get(proc_tables, i);
+		}
+	}
+	// KASSERT(false);
+	return NULL;
+}
+#endif
