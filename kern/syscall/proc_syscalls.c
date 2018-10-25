@@ -16,9 +16,13 @@
   /* this implementation of sys__exit does not do anything with the exit code */
   /* this needs to be fixed to get exit() and waitpid() working properly */
 
-void sys__exit(int exitcode) {
+void sys__exit(int exitcode, bool exit_by_call) {
 #if OPT_A2
+  if (proc_table_cv == NULL){
+    proc_table_cv = cv_create("proc_table_cvv");
+  }
   pid_t currpid = curproc -> pid;
+  lock_acquire(proc_table_lock);
   struct proc_table* pt = find_proc_table(currpid);
   KASSERT(pt != NULL);
   if (pt -> ppid != -1){ // curproc is a child.
@@ -26,7 +30,11 @@ void sys__exit(int exitcode) {
     if (ppt == NULL){ // MYDEBUG
       DEBUG(DB_SYSCALL, "PROC_SYSCALLS_C, ppt is null");
     }
-    pt -> exitcode = _MKWAIT_EXIT(exitcode);
+    if (exit_by_call){
+      pt -> exitcode = _MKWAIT_EXIT(exitcode);
+    } else {
+      pt -> exitcode = _MKWAIT_SIG(exitcode);
+    }
     if (ppt -> state == PROC_RUNNING){
       pt -> state = PROC_ZOMBIE;
       cv_broadcast(proc_table_cv, proc_table_lock);
@@ -54,7 +62,7 @@ void sys__exit(int exitcode) {
       lock_release(pid_pool_lock);
     }
   }
-  
+  lock_release(proc_table_lock);
 #endif
   struct addrspace *as;
   struct proc *p = curproc;
@@ -130,12 +138,12 @@ sys_waitpid(pid_t pid,
   }
   /* for now, just pretend the exitstatus is 0 */
 #if OPT_A2
+  if (proc_table_cv == NULL){
+    proc_table_cv = cv_create("proc_table_cvv");
+  }
   lock_acquire(proc_table_lock);
   struct proc_table* pt = find_proc_table(curproc -> pid);
   KASSERT(pt != NULL);
-  if (pt -> ppid == -1) {
-    return (-1); // What error should this be?
-  }
   struct proc_table* wait_pt = find_proc_table(pid);
   if (wait_pt == NULL) {
     lock_release(proc_table_lock);
@@ -164,6 +172,8 @@ sys_waitpid(pid_t pid,
 #if OPT_A2
 int sys_fork(pid_t* retval, struct trapframe *tf){
     struct proc *child_proc = proc_create_runprogram(curproc -> p_name);
+    struct proc_table* pt = find_proc_table(child_proc -> pid);
+    pt -> ppid = curproc -> pid;
     if (child_proc == NULL) {
         proc_destroy(child_proc);
         return ENPROC;
@@ -176,7 +186,7 @@ int sys_fork(pid_t* retval, struct trapframe *tf){
     if (!child_tf) {
         proc_destroy(child_proc);
         // https://www.linuxjournal.com/article/6930
-        return -ENOMEM;
+        return ENOMEM;
     }
     // https://stackoverflow.com/questions/13284033/copying-structure-in-c-with-assignment-instead-of-memcpy#comment18110975_13284033
     memcpy(child_tf, tf, sizeof *child_tf);
