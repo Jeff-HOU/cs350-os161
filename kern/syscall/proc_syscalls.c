@@ -27,9 +27,9 @@ void sys__exit(int exitcode, bool exit_by_call) {
   KASSERT(pt != NULL);
   if (pt -> ppid != -1){ // curproc is a child.
     struct proc_table* ppt = find_proc_table(pt -> ppid);
-    if (ppt == NULL){ // MYDEBUG
-      DEBUG(DB_SYSCALL, "PROC_SYSCALLS_C, ppt is null");
-    }
+    // if (ppt == NULL){ // MYDEBUG
+    //   DEBUG(DB_SYSCALL, "PROC_SYSCALLS_C, ppt is null");
+    // }
     if (exit_by_call){
       pt -> exitcode = _MKWAIT_EXIT(exitcode);
     } else {
@@ -153,7 +153,7 @@ sys_waitpid(pid_t pid,
     lock_release(proc_table_lock);
     return (ECHILD);
   }
-  DEBUG(DB_SYSCALL, "wait_pt -> state == %d", wait_pt -> state);
+  // DEBUG(DB_SYSCALL, "wait_pt -> state == %d", wait_pt -> state);
   while (wait_pt -> state == PROC_RUNNING){
     cv_wait(proc_table_cv, proc_table_lock);
   }
