@@ -12,6 +12,9 @@
 #include <array.h>
 #include <synch.h>
 #include <mips/trapframe.h>
+#include <kern/fcntl.h>
+#include <vfs.h>
+#include <limits.h>
 
   /* this implementation of sys__exit does not do anything with the exit code */
   /* this needs to be fixed to get exit() and waitpid() working properly */
@@ -199,5 +202,74 @@ int sys_fork(pid_t* retval, struct trapframe *tf){
     (void)thread_fork_return;
     *retval = child_proc -> pid;
     return 0;
+}
+
+int sys_execv(userptr_t program, userptr_t args) {
+  if (program == NULL) {
+    return ENODEV;
+  }
+  int result;
+  // Count the number of arguments
+  int path_length = strlen((char *)program) + 1;
+  int argc = 0;
+  int all_arg_length = 0;
+  char* 
+  while(args[argc] != NULL){
+    ++argc;
+    all_arg_length += strlen(((char **)args)[argc]) + 1;
+  }
+  if (all_arg_length > ARG_MAX || path_length > PATH_MAX){
+    return E2BIG;
+  }
+  if (path_length == 1){
+    return ENOENT;
+  }
+  // and copy them into the kernel
+  char** argv = kmalloc((argc+1) * sizeof *argv);
+  for(int i = 0; i < argc; i++){
+    argv[i] = kmalloc((strlen(args[i]) + 1) * sizeof **argv);
+    result = copyinstr(args[i], argv[i], strlen(args[i]) + 1, NULL);
+    if (result) {
+      return (result);
+    }
+  }
+  argv[argc] = NULL;
+
+  // Copy the program path into the kernel
+  char* program_path = kmalloc((path_length) * sizeof(char));
+  result = copyinstr(program, program_path, path_length, NULL);
+  if (result) {
+    return result;
+  }
+  struct vnode *v;
+  struct addrspace *as;
+  vaddr_t entrypoint, stackptr;
+  result = vfs_open(program_path, O_RDONLY, 0, &v);
+  if (result) {
+		return result;
+	}
+  KASSERT(curproc_getas() == NULL);
+  as = as_create();
+	if (as ==NULL) {
+		vfs_close(v);
+		return ENOMEM;
+	}
+  curproc_setas(as);
+	as_activate();
+  result = load_elf(v, &entrypoint);
+	if (result) {
+		/* p_addrspace will go away when curproc is destroyed */
+		vfs_close(v);
+		return result;
+	}
+  vfs_close(v);
+  result = as_define_stack(as, &stackptr);
+  if (result) {
+    /* p_addrspace will go away when curproc is destroyed */
+    return result;
+  }
+  as_destroy(as);
+  enter_new_process(argc, (userptr_t)argv, stackptr, entrypoint);
+  return EINVAL;
 }
 #endif
