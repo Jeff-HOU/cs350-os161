@@ -213,10 +213,13 @@ int sys_execv(userptr_t program, userptr_t args) {
   int path_length = strlen((char *)program) + 1;
   int argc = 0;
   int all_arg_length = 0;
-  char* 
-  while(args[argc] != NULL){
-    ++argc;
+  char* arg;
+  copyin(args, &arg, sizeof(char*));
+  int i = 1;
+  while(arg != NULL){
     all_arg_length += strlen(((char **)args)[argc]) + 1;
+    copyin(args + (i++)*(sizeof(char*)), &arg, sizeof(char*));
+    ++argc;
   }
   if (all_arg_length > ARG_MAX || path_length > PATH_MAX){
     return E2BIG;
@@ -227,8 +230,9 @@ int sys_execv(userptr_t program, userptr_t args) {
   // and copy them into the kernel
   char** argv = kmalloc((argc+1) * sizeof *argv);
   for(int i = 0; i < argc; i++){
-    argv[i] = kmalloc((strlen(args[i]) + 1) * sizeof **argv);
-    result = copyinstr(args[i], argv[i], strlen(args[i]) + 1, NULL);
+    copyin(args + i * (sizeof(char*)), &arg, sizeof(char*));
+    argv[i] = kmalloc((strlen(arg) + 1) * sizeof **argv);
+    result = copyinstr((userptr_t)arg, argv[i], strlen(arg) + 1, NULL);
     if (result) {
       return (result);
     }
@@ -242,19 +246,18 @@ int sys_execv(userptr_t program, userptr_t args) {
     return result;
   }
   struct vnode *v;
-  struct addrspace *as;
+  struct addrspace *as1;
   vaddr_t entrypoint, stackptr;
   result = vfs_open(program_path, O_RDONLY, 0, &v);
   if (result) {
 		return result;
 	}
-  KASSERT(curproc_getas() == NULL);
-  as = as_create();
-	if (as ==NULL) {
+  as1 = as_create();
+	if (as1 ==NULL) {
 		vfs_close(v);
 		return ENOMEM;
 	}
-  curproc_setas(as);
+  struct addrspace* as = curproc_setas(as1);
 	as_activate();
   result = load_elf(v, &entrypoint);
 	if (result) {
@@ -263,11 +266,31 @@ int sys_execv(userptr_t program, userptr_t args) {
 		return result;
 	}
   vfs_close(v);
-  result = as_define_stack(as, &stackptr);
+  result = as_define_stack(as1, &stackptr);
   if (result) {
     /* p_addrspace will go away when curproc is destroyed */
     return result;
   }
+  vaddr_t *arg_prts = kmalloc((argc + 1) * sizeof(vaddr_t));
+for (int i = argc - 1; i >= 0; i--){
+  size_t arg_len = strlen(argv[i]) + 1;
+  size_t aligned_len = ROUNDUP(arg_len, 4);
+  stackptr = stackptr - aligned_len;
+  result = copyoutstr(argv[i], (userptr_t)stackptr, arg_len, NULL);
+  if (result) {
+    return (result);
+  }
+  arg_prts[i] = stackptr;
+}
+arg_prts[argc] = (vaddr_t)NULL;
+
+for (int i = argc; i >= 0; i--) {
+  stackptr = stackptr - ROUNDUP(sizeof(vaddr_t), 4);
+  result = copyout((void*)&arg_prts[i], (userptr_t)stackptr, sizeof(vaddr_t));
+  if (result) {
+    return result;
+  }
+}
   as_destroy(as);
   enter_new_process(argc, (userptr_t)argv, stackptr, entrypoint);
   return EINVAL;
