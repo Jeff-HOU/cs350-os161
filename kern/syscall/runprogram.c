@@ -56,13 +56,22 @@ int
 runprogram(char *progname, char** args)
 {
 	int argc = 0;
+	int result;
 	while(args[argc] != NULL){
-    		++argc;
+    	++argc;
 	}
+	char** argv = kmalloc((argc+1) * sizeof *argv);
+  	for(int i = 0; i < argc; i++){
+		argv[i] = kmalloc((strlen(args[i]) + 1) * sizeof **argv);
+		result = copyinstr(args[i], argv[i], strlen(args[i]) + 1, NULL);
+		if (result) {
+			return (result);
+		}
+	}
+	argv[argc] = NULL;
 	struct addrspace *as;
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
-	int result;
 
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
@@ -102,28 +111,30 @@ runprogram(char *progname, char** args)
 		return result;
 	}
 	vaddr_t *arg_prts = kmalloc((argc + 1) * sizeof(vaddr_t));
-for (int i = argc - 1; i >= 0; i--){
-  size_t arg_len = strlen(args[i]) + 1;
-  size_t aligned_len = ROUNDUP(arg_len, 4);
-  stackptr = stackptr - aligned_len;
-  result = copyoutstr(args[i], (userptr_t)stackptr, arg_len, NULL);
-  if (result) {
-    return (result);
-  }
-  arg_prts[i] = stackptr;
-}
-arg_prts[argc] = (vaddr_t)NULL;
+	for (int i = argc - 1; i >= 0; i--)
+	{
+		stackptr -= ROUNDUP(strlen(argv[i]) + 1, 4);
+		result = copyoutstr(argv[i], (userptr_t)stackptr, arg_len, NULL);
+		if (result)
+		{
+			return (result);
+		}
+		arg_prts[i] = stackptr;
+	}
+	arg_prts[argc] = NULL;
 
-for (int i = argc; i >= 0; i--) {
-  stackptr = stackptr - ROUNDUP(sizeof(vaddr_t), 4);
-  result = copyout((void*)&arg_prts[i], (userptr_t)stackptr, sizeof(vaddr_t));
-  if (result) {
-    return result;
-  }
-}
+	for (int i = argc; i >= 0; i--)
+	{
+		stackptr -= ROUNDUP(sizeof(vaddr_t), 4);
+		result = copyout((void *)&arg_prts[i], (userptr_t)stackptr, sizeof(vaddr_t));
+		if (result)
+		{
+			return result;
+		}
+	}
 
 	/* Warp to user mode. */
-	enter_new_process(argc /*argc*/, (userptr_t)args /*userspace addr of argv*/,
+	enter_new_process(argc /*argc*/, (userptr_t)argv /*userspace addr of argv*/,
 			  stackptr, entrypoint);
 	
 	/* enter_new_process does not return. */

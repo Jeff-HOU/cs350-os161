@@ -272,25 +272,23 @@ int sys_execv(userptr_t program, userptr_t args) {
     return result;
   }
   vaddr_t *arg_prts = kmalloc((argc + 1) * sizeof(vaddr_t));
-for (int i = argc - 1; i >= 0; i--){
-  size_t arg_len = strlen(argv[i]) + 1;
-  size_t aligned_len = ROUNDUP(arg_len, 4);
-  stackptr = stackptr - aligned_len;
-  result = copyoutstr(argv[i], (userptr_t)stackptr, arg_len, NULL);
-  if (result) {
-    return (result);
+  for (int i = argc - 1; i >= 0; i--){
+    stackptr -= ROUNDUP(strlen(argv[i]) + 1, 4);
+    result = copyoutstr(argv[i], (userptr_t)stackptr, arg_len, NULL);
+    if (result) {
+      return (result);
+    }
+    arg_prts[i] = stackptr;
   }
-  arg_prts[i] = stackptr;
-}
-arg_prts[argc] = (vaddr_t)NULL;
+  arg_prts[argc] = NULL;
 
-for (int i = argc; i >= 0; i--) {
-  stackptr = stackptr - ROUNDUP(sizeof(vaddr_t), 4);
-  result = copyout((void*)&arg_prts[i], (userptr_t)stackptr, sizeof(vaddr_t));
-  if (result) {
-    return result;
+  for (int i = argc; i >= 0; i--) {
+    stackptr -= ROUNDUP(sizeof(vaddr_t), 4);
+    result = copyout((void*)&arg_prts[i], (userptr_t)stackptr, sizeof(vaddr_t));
+    if (result) {
+      return result;
+    }
   }
-}
   as_destroy(as);
   enter_new_process(argc, (userptr_t)argv, stackptr, entrypoint);
   return EINVAL;
