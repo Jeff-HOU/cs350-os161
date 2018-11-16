@@ -274,13 +274,13 @@ int sys_execv(userptr_t program, userptr_t args) {
   vaddr_t *arg_prts = kmalloc((argc + 1) * sizeof(vaddr_t));
   for (int i = argc - 1; i >= 0; i--){
     stackptr -= ROUNDUP(strlen(argv[i]) + 1, 4);
-    result = copyoutstr(argv[i], (userptr_t)stackptr, arg_len, NULL);
+    result = copyoutstr(argv[i], (userptr_t)stackptr, strlen(argv[i]) + 1, NULL);
     if (result) {
       return (result);
     }
     arg_prts[i] = stackptr;
   }
-  arg_prts[argc] = NULL;
+  arg_prts[argc] = (vaddr_t)NULL;
 
   for (int i = argc; i >= 0; i--) {
     stackptr -= ROUNDUP(sizeof(vaddr_t), 4);
@@ -290,7 +290,7 @@ int sys_execv(userptr_t program, userptr_t args) {
     }
   }
   as_destroy(as);
-  enter_new_process(argc, (userptr_t)argv, stackptr, entrypoint);
+  enter_new_process(argc, (userptr_t)stackptr, stackptr, entrypoint);
   return EINVAL;
 }
 #endif

@@ -53,20 +53,17 @@
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
-runprogram(char *progname, char** args)
+runprogram(char *progname, char** args, int nargs)
 {
 	int argc = 0;
 	int result;
 	while(args[argc] != NULL){
     	++argc;
 	}
+	argc = nargs;
 	char** argv = kmalloc((argc+1) * sizeof *argv);
   	for(int i = 0; i < argc; i++){
-		argv[i] = kmalloc((strlen(args[i]) + 1) * sizeof **argv);
-		result = copyinstr(args[i], argv[i], strlen(args[i]) + 1, NULL);
-		if (result) {
-			return (result);
-		}
+		argv[i] = kstrdup(args[i]);
 	}
 	argv[argc] = NULL;
 	struct addrspace *as;
@@ -114,14 +111,14 @@ runprogram(char *progname, char** args)
 	for (int i = argc - 1; i >= 0; i--)
 	{
 		stackptr -= ROUNDUP(strlen(argv[i]) + 1, 4);
-		result = copyoutstr(argv[i], (userptr_t)stackptr, arg_len, NULL);
+		result = copyoutstr(argv[i], (userptr_t)stackptr, strlen(argv[i]) + 1, NULL);
 		if (result)
 		{
 			return (result);
 		}
 		arg_prts[i] = stackptr;
 	}
-	arg_prts[argc] = NULL;
+	arg_prts[argc] = (vaddr_t)NULL;
 
 	for (int i = argc; i >= 0; i--)
 	{
@@ -134,7 +131,7 @@ runprogram(char *progname, char** args)
 	}
 
 	/* Warp to user mode. */
-	enter_new_process(argc /*argc*/, (userptr_t)argv /*userspace addr of argv*/,
+	enter_new_process(argc /*argc*/, (userptr_t)stackptr /*userspace addr of argv*/,
 			  stackptr, entrypoint);
 	
 	/* enter_new_process does not return. */
