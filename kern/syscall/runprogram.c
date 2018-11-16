@@ -107,25 +107,22 @@ runprogram(char *progname, char** args, int nargs)
 		/* p_addrspace will go away when curproc is destroyed */
 		return result;
 	}
-	vaddr_t *arg_prts = kmalloc((argc + 1) * sizeof(vaddr_t));
-	for (int i = argc - 1; i >= 0; i--)
-	{
+	/* round up and copy back to user space stack */
+	vaddr_t* tmp_ptrs = kmalloc((argc + 1) * sizeof *tmp_ptrs);
+	for (int i = argc - 1; i >= 0; --i) {
 		stackptr -= ROUNDUP(strlen(argv[i]) + 1, 4);
 		result = copyoutstr(argv[i], (userptr_t)stackptr, strlen(argv[i]) + 1, NULL);
-		if (result)
-		{
+		if (result) {
 			return (result);
 		}
-		arg_prts[i] = stackptr;
+		tmp_ptrs[i] = stackptr;
 	}
-	arg_prts[argc] = (vaddr_t)NULL;
+	tmp_ptrs[argc] = (vaddr_t)NULL;
 
-	for (int i = argc; i >= 0; i--)
-	{
-		stackptr -= ROUNDUP(sizeof(vaddr_t), 4);
-		result = copyout((void *)&arg_prts[i], (userptr_t)stackptr, sizeof(vaddr_t));
-		if (result)
-		{
+	for (int i = argc; i >= 0; --i) {
+		stackptr -= ROUNDUP(sizeof *tmp_ptrs, 4);
+		result = copyout((void*)&tmp_ptrs[i], (userptr_t)stackptr, sizeof *tmp_ptrs);
+		if (result) {
 			return result;
 		}
 	}
