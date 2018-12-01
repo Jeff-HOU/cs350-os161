@@ -52,11 +52,32 @@
  * Wrap rma_stealmem in a spinlock.
  */
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
+struct coremap {
+	paddr_t addr;
+	bool avail;
+	int nblocks;
+};
+struct coremap* core_map;
+int n_frames;
 
 void
 vm_bootstrap(void)
 {
 	/* Do nothing. */
+#if OPT_A3
+	paddr_t hi, lo_old, lo;
+	ram_getsize(&lo_old, &hi);
+	core_map = (struct coremap*) PADDR_TO_KVADDR(lo_old);
+	//lo = lo_old + sizeof(struct coremap) * (hi - lo_old) / PAGE_SIZE;
+	//lo = ROUNDUP(lo, PAGE_SIZE);
+	n_frames = (hi - lo_old) / (sizeof(struct coremap) + PAGE_SIZE);
+	lo = hi - n_frames * PAGE_SIZE;
+	for (int i = 0; i < n_frames; ++i){
+		core_map[i].addr = lo + i * PAGE_SIZE;
+		core_map[i].avail = true;
+		core_map[i].nblocks = -1;
+	}
+#endif
 }
 
 static
@@ -64,11 +85,49 @@ paddr_t
 getppages(unsigned long npages)
 {
 	paddr_t addr;
-
 	spinlock_acquire(&stealmem_lock);
-
-	addr = ram_stealmem(npages);
-	
+#if OPT_A3
+	int n_pages = npages;
+	int j_loop_ceiling;
+	bool found = true;
+	int lo_alloc;
+	for (int i = 0; i < n_frames; ++i) {
+		if (found) break;
+		if (core_map[i].avail) {
+			if (n_pages > 1) {
+				j_loop_ceiling = (i + n_pages < n_frames) ? (i + n_pages) : n_frames;
+				for (int j = i + 1; j < j_loop_ceiling; ++j) {
+					if (!core_map[j].avail) {
+						i = j + core_map[j].nblocks - 1; // -1 bcz ++i
+						break;
+					}
+					if (j - i == n_pages) {
+						found = true;
+						lo_alloc = i;
+					}
+				}
+			} else {
+				found = true;
+				lo_alloc = i;
+			}
+		}
+	}
+	if (found) {
+		for (int i = lo_alloc; i < n_pages; ++i) {
+			core_map[i].avail = false;
+			core_map[i].nblocks = -1;
+		}
+		core_map[lo_alloc].nblocks = n_pages;
+		addr = core_map[lo_alloc].addr;
+	} else {
+		kprintf("getppages failes\n");
+		spinlock_release(&stealmem_lock);
+		return ENOMEM;
+	}
+					
+#else
+	addr = ram_stealmem(n_pages);
+#endif	
 	spinlock_release(&stealmem_lock);
 	return addr;
 }
@@ -82,15 +141,40 @@ alloc_kpages(int npages)
 	if (pa==0) {
 		return 0;
 	}
+#if OPT_A3
+	if (pa == ENOMEM)
+		return ENOMEM;
+#endif
 	return PADDR_TO_KVADDR(pa);
+
 }
 
 void 
 free_kpages(vaddr_t addr)
 {
 	/* nothing - leak the memory. */
-
+#if OPT_A3
+	KASSERT(!addr);
+	spinlock_acquire(&stealmem_lock);
+	int lo_free;
+	for (int i = 0; i < n_frames; ++i){
+		if (core_map[i].addr == addr) {
+			lo_free = i;
+			break;
+		}
+	}
+	if ((core_map[lo_free].nblocks != -1) || (core_map[lo_free].avail == true)){
+		return;
+	}
+	int i_loop_ceiling = lo_free + core_map[lo_free].nblocks;
+	for (int i = lo_free; i < i_loop_ceiling; ++i){
+		core_map[i].avail = true;
+	}
+	core_map[lo_free].nblocks = -1;
+	spinlock_release(&stealmem_lock);
+#else
 	(void)addr;
+#endif
 }
 
 void
@@ -246,6 +330,9 @@ as_create(void)
 void
 as_destroy(struct addrspace *as)
 {
+	free_kpages(as->as_pbase1);
+	free_kpages(as->as_pbase2);
+	free_kpages(as->as_stackpbase);
 	kfree(as);
 }
 
@@ -295,9 +382,16 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	npages = sz / PAGE_SIZE;
 
 	/* We don't use these - all pages are read-write */
+#if OPT_A3
+	as->as_readable = (bool)readable;
+	as->as_writable = (bool)writeable;
+	as->as_executable = (bool)executable;
+	// why do we even need these??? why do we even need executable???????????
+#else
 	(void)readable;
 	(void)writeable;
 	(void)executable;
+#endif
 
 	if (as->as_vbase1 == 0) {
 		as->as_vbase1 = vaddr;
