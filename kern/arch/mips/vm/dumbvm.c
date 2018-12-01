@@ -59,6 +59,7 @@ struct coremap {
 };
 struct coremap* core_map;
 int n_frames;
+bool bootstraped = false;
 
 void
 vm_bootstrap(void)
@@ -77,6 +78,7 @@ vm_bootstrap(void)
 		core_map[i].avail = true;
 		core_map[i].nblocks = -1;
 	}
+	bootstraped = true;
 #endif
 }
 
@@ -87,9 +89,10 @@ getppages(unsigned long npages)
 	paddr_t addr;
 	spinlock_acquire(&stealmem_lock);
 #if OPT_A3
+	if (bootstraped){
 	int n_pages = npages;
 	int j_loop_ceiling;
-	bool found = true;
+	bool found = false;
 	int lo_alloc;
 	for (int i = 0; i < n_frames; ++i) {
 		if (found) break;
@@ -101,7 +104,7 @@ getppages(unsigned long npages)
 						i = j + core_map[j].nblocks - 1; // -1 bcz ++i
 						break;
 					}
-					if (j - i == n_pages) {
+					if (j - i + 1 == n_pages) {
 						found = true;
 						lo_alloc = i;
 					}
@@ -113,7 +116,7 @@ getppages(unsigned long npages)
 		}
 	}
 	if (found) {
-		for (int i = lo_alloc; i < n_pages; ++i) {
+		for (int i = lo_alloc; i < n_pages + lo_alloc; ++i) {
 			core_map[i].avail = false;
 			core_map[i].nblocks = -1;
 		}
@@ -124,9 +127,11 @@ getppages(unsigned long npages)
 		spinlock_release(&stealmem_lock);
 		return ENOMEM;
 	}
-					
+	} else {
+		addr = ram_stealmem(npages);
+	}		
 #else
-	addr = ram_stealmem(n_pages);
+	addr = ram_stealmem(npages);
 #endif	
 	spinlock_release(&stealmem_lock);
 	return addr;
@@ -154,8 +159,9 @@ free_kpages(vaddr_t addr)
 {
 	/* nothing - leak the memory. */
 #if OPT_A3
-	KASSERT(!addr);
+	KASSERT(addr);
 	spinlock_acquire(&stealmem_lock);
+	if (bootstraped) {
 	int lo_free;
 	for (int i = 0; i < n_frames; ++i){
 		if (core_map[i].addr == addr) {
@@ -163,7 +169,8 @@ free_kpages(vaddr_t addr)
 			break;
 		}
 	}
-	if ((core_map[lo_free].nblocks != -1) || (core_map[lo_free].avail == true)){
+	if ((core_map[lo_free].nblocks == -1) || (core_map[lo_free].avail == true)){
+		spinlock_release(&stealmem_lock);
 		return;
 	}
 	int i_loop_ceiling = lo_free + core_map[lo_free].nblocks;
@@ -171,6 +178,7 @@ free_kpages(vaddr_t addr)
 		core_map[i].avail = true;
 	}
 	core_map[lo_free].nblocks = -1;
+	}
 	spinlock_release(&stealmem_lock);
 #else
 	(void)addr;
