@@ -390,16 +390,9 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	npages = sz / PAGE_SIZE;
 
 	/* We don't use these - all pages are read-write */
-#if OPT_A3
-	as->as_readable = (bool)readable;
-	as->as_writable = (bool)writeable;
-	as->as_executable = (bool)executable;
-	// why do we even need these??? why do we even need executable???????????
-#else
 	(void)readable;
 	(void)writeable;
 	(void)executable;
-#endif
 
 	if (as->as_vbase1 == 0) {
 		as->as_vbase1 = vaddr;

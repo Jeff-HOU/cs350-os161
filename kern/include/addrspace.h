@@ -58,9 +58,6 @@ struct addrspace {
   paddr_t as_stackpbase;
 #if OPT_A3
   bool as_loadcomplete;
-  bool as_readable;
-  bool as_writable;
-  bool as_executable;
 #endif
 };
 
